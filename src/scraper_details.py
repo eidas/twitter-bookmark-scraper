@@ -11,7 +11,8 @@ from src.sheets import get_pending_urls, get_sheets_client, get_worksheet, updat
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
 async def safe_goto(page, url: str) -> None:
-    await page.goto(url, wait_until="networkidle", timeout=30000)
+    await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    await page.wait_for_selector('article[data-testid="tweet"]', timeout=15000)
 
 
 async def rate_limited_wait() -> None:
@@ -20,7 +21,6 @@ async def rate_limited_wait() -> None:
 
 async def extract_post_details(page, url: str) -> dict:
     await safe_goto(page, url)
-    await asyncio.sleep(2)
 
     post_date = None
     time_el = await page.query_selector('article[data-testid="tweet"] time')
