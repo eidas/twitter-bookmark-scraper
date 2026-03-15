@@ -40,9 +40,17 @@ async def extract_post_details(page, url: str) -> dict:
 
 
 def to_small_image_url(original_url: str) -> str:
-    base = re.split(r"[?.]", original_url)[0]
-    ext_match = re.search(r"\.(jpg|jpeg|png|webp)", original_url)
-    fmt = ext_match.group(1) if ext_match else "jpg"
+    # クエリパラメータを除去
+    base = original_url.split("?")[0]
+    # 末尾の拡張子を検出して除去
+    ext_match = re.search(r"\.(jpg|jpeg|png|webp)$", base)
+    if ext_match:
+        fmt = ext_match.group(1)
+        base = base[: ext_match.start()]
+    else:
+        # URLにクエリパラメータとして format があるか確認
+        fmt_match = re.search(r"format=(jpg|jpeg|png|webp)", original_url)
+        fmt = fmt_match.group(1) if fmt_match else "jpg"
     return f"{base}?format={fmt}&name=small"
 
 
