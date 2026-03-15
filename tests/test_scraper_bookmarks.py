@@ -25,19 +25,27 @@ def _make_time(datetime_str):
 
 @pytest.mark.asyncio
 async def test_extract_collects_urls():
+    """仮想スクロールを模擬: 1回目と2回目で異なる article が返る"""
     page = AsyncMock()
-    articles = [
+    batch1 = [
         make_article("/user1/status/111", "2025-06-15T10:00:00Z"),
         make_article("/user2/status/222", "2025-06-14T10:00:00Z"),
     ]
-    page.query_selector_all = AsyncMock(side_effect=[articles, articles])
+    batch2 = [
+        make_article("/user3/status/333", "2025-06-13T10:00:00Z"),
+    ]
+    # batch1 → スクロール → batch2 → スクロール → batch2(同じ=新規なし) ×3回
+    page.query_selector_all = AsyncMock(
+        side_effect=[batch1, batch2, batch2, batch2, batch2]
+    )
     page.evaluate = AsyncMock()
 
     result = await extract_bookmark_urls(page, cutoff_date=None)
 
-    assert len(result) == 2
+    assert len(result) == 3
     assert result[0]["url"] == "https://x.com/user1/status/111"
     assert result[1]["url"] == "https://x.com/user2/status/222"
+    assert result[2]["url"] == "https://x.com/user3/status/333"
 
 
 @pytest.mark.asyncio
@@ -49,7 +57,10 @@ async def test_extract_does_not_stop_on_single_old_post():
         make_article("/user2/status/222", "2024-12-01T10:00:00Z"),  # Before cutoff
         make_article("/user3/status/333", "2025-03-01T10:00:00Z"),  # After cutoff
     ]
-    page.query_selector_all = AsyncMock(side_effect=[articles, articles])
+    # 1回目 → スクロール → 同じ記事(新規なし) ×3回
+    page.query_selector_all = AsyncMock(
+        side_effect=[articles, articles, articles, articles]
+    )
     page.evaluate = AsyncMock()
 
     cutoff = datetime(2025, 1, 1)
@@ -68,10 +79,8 @@ async def test_extract_stops_after_consecutive_old_posts():
     articles = [
         make_article("/user1/status/111", "2025-06-15T10:00:00Z"),
     ]
-    # 閾値分の古い投稿を追加
     for i in range(CUTOFF_CONSECUTIVE_THRESHOLD):
         articles.append(make_article(f"/old/status/{200 + i}", "2024-06-01T10:00:00Z"))
-    # 停止後に到達しないはずの投稿
     articles.append(make_article("/new/status/999", "2025-08-01T10:00:00Z"))
 
     page.query_selector_all = AsyncMock(return_value=articles)
@@ -80,9 +89,7 @@ async def test_extract_stops_after_consecutive_old_posts():
     cutoff = datetime(2025, 1, 1)
     result = await extract_bookmark_urls(page, cutoff_date=cutoff)
 
-    # 最初の1件 + 古い投稿(閾値-1)件（閾値に達した時点で return するので最後の1件は含まない）
     assert result[0]["url"] == "https://x.com/user1/status/111"
-    # 閾値到達時に停止するので、最後の新しい投稿は含まれない
     assert not any(r["url"] == "https://x.com/new/status/999" for r in result)
 
 
@@ -97,26 +104,66 @@ async def test_extract_resets_consecutive_count():
         make_article("/old/status/4", "2024-08-01T10:00:00Z"),
         make_article("/old/status/5", "2024-09-01T10:00:00Z"),
     ]
-    page.query_selector_all = AsyncMock(side_effect=[articles, articles])
+    # 1回目 → スクロール → 同じ記事(新規なし) ×3回
+    page.query_selector_all = AsyncMock(
+        side_effect=[articles, articles, articles, articles]
+    )
     page.evaluate = AsyncMock()
 
     cutoff = datetime(2025, 1, 1)
     result = await extract_bookmark_urls(page, cutoff_date=cutoff)
 
-    # 連続が途切れるため全件収集される
     assert len(result) == 5
 
 
 @pytest.mark.asyncio
 async def test_extract_deduplicates():
+    """仮想スクロールで同じ article が繰り返し現れても重複しない"""
     page = AsyncMock()
     articles = [
         make_article("/user1/status/111", "2025-06-15T10:00:00Z"),
         make_article("/user1/status/111", "2025-06-15T10:00:00Z"),  # Duplicate
     ]
-    page.query_selector_all = AsyncMock(side_effect=[articles, articles])
+    # 同じ記事しかないので新規なし×3回で終了
+    page.query_selector_all = AsyncMock(
+        side_effect=[articles, articles, articles, articles]
+    )
     page.evaluate = AsyncMock()
 
     result = await extract_bookmark_urls(page, cutoff_date=None)
 
     assert len(result) == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_virtual_scroll_replaces_articles():
+    """仮想スクロール: DOM上のarticle数は一定だが中身が入れ替わる"""
+    page = AsyncMock()
+    # スクロールごとにDOMの中身が入れ替わる（件数は同じ2件）
+    batch1 = [
+        make_article("/user/status/1", "2025-06-15T10:00:00Z"),
+        make_article("/user/status/2", "2025-06-14T10:00:00Z"),
+    ]
+    batch2 = [
+        make_article("/user/status/2", "2025-06-14T10:00:00Z"),  # 重複
+        make_article("/user/status/3", "2025-06-13T10:00:00Z"),  # 新規
+    ]
+    batch3 = [
+        make_article("/user/status/3", "2025-06-13T10:00:00Z"),  # 重複
+        make_article("/user/status/4", "2025-06-12T10:00:00Z"),  # 新規
+    ]
+    # batch3 が繰り返されて新規なし×3回で終了
+    page.query_selector_all = AsyncMock(
+        side_effect=[batch1, batch2, batch3, batch3, batch3, batch3]
+    )
+    page.evaluate = AsyncMock()
+
+    result = await extract_bookmark_urls(page, cutoff_date=None)
+
+    urls = [r["url"] for r in result]
+    assert urls == [
+        "https://x.com/user/status/1",
+        "https://x.com/user/status/2",
+        "https://x.com/user/status/3",
+        "https://x.com/user/status/4",
+    ]
