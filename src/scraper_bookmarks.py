@@ -13,13 +13,15 @@ CUTOFF_CONSECUTIVE_THRESHOLD = 5
 async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict]:
     collected = []
     seen_urls = set()
-    previous_count = 0
     consecutive_old = 0
+    no_new_count = 0
+    max_no_new = 3  # 新規URLが見つからないスクロールが連続したら終了
 
     while True:
         articles = await page.query_selector_all('article[data-testid="tweet"]')
+        found_new = False
 
-        for article in articles[previous_count:]:
+        for article in articles:
             link = await article.query_selector('a[href*="/status/"]')
             if not link:
                 continue
@@ -31,6 +33,7 @@ async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict
             if url in seen_urls:
                 continue
             seen_urls.add(url)
+            found_new = True
 
             datetime_str = ""
             time_el = await article.query_selector("time")
@@ -53,14 +56,15 @@ async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict
 
             collected.append({"url": url, "datetime_hint": datetime_str})
 
-        previous_count = len(articles)
+        if found_new:
+            no_new_count = 0
+        else:
+            no_new_count += 1
+            if no_new_count >= max_no_new:
+                break
 
         await page.evaluate("window.scrollBy(0, window.innerHeight)")
         await asyncio.sleep(random.uniform(2.0, 3.0))
-
-        new_articles = await page.query_selector_all('article[data-testid="tweet"]')
-        if len(new_articles) == previous_count:
-            break
 
     return collected
 
