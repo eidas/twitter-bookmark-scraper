@@ -7,10 +7,14 @@ from src.config import load_config
 from src.sheets import append_bookmarks, get_existing_urls, get_sheets_client, get_worksheet
 
 
+CUTOFF_CONSECUTIVE_THRESHOLD = 5
+
+
 async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict]:
     collected = []
     seen_urls = set()
     previous_count = 0
+    consecutive_old = 0
 
     while True:
         articles = await page.query_selector_all('article[data-testid="tweet"]')
@@ -35,8 +39,17 @@ async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict
                 if cutoff_date and datetime_str:
                     post_dt = datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
                     if post_dt.replace(tzinfo=None) < cutoff_date:
-                        print(f"cutoff_date ({cutoff_date}) に到達。収集を終了します。")
-                        return collected
+                        consecutive_old += 1
+                        if consecutive_old >= CUTOFF_CONSECUTIVE_THRESHOLD:
+                            print(
+                                f"cutoff_date ({cutoff_date}) より古い投稿が"
+                                f" {CUTOFF_CONSECUTIVE_THRESHOLD} 件連続。収集を終了します。"
+                            )
+                            return collected
+                        collected.append({"url": url, "datetime_hint": datetime_str})
+                        continue
+                    else:
+                        consecutive_old = 0
 
             collected.append({"url": url, "datetime_hint": datetime_str})
 
