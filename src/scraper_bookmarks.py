@@ -62,8 +62,8 @@ async def collect_bookmarks(config: dict) -> None:
 
     async with connect_browser(config["cdp_endpoint"]) as context:
         page = await context.new_page()
-        await page.goto("https://x.com/i/bookmarks", wait_until="networkidle")
-        await asyncio.sleep(3)
+        await page.goto("https://x.com/i/bookmarks", wait_until="domcontentloaded")
+        await page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
 
         print("ブックマークの収集を開始します...")
         bookmarks = await extract_bookmark_urls(page, cutoff_date)
