@@ -11,7 +11,9 @@ def make_article(href, datetime_str=None):
     article = AsyncMock()
     link = AsyncMock()
     link.get_attribute = AsyncMock(return_value=href)
-    article.query_selector = AsyncMock(side_effect=lambda sel: link if "status" in sel else _make_time(datetime_str))
+    article.query_selector = AsyncMock(
+        side_effect=lambda sel: link if "status" in sel else _make_time(datetime_str)
+    )
     return article
 
 
@@ -167,3 +169,53 @@ async def test_extract_virtual_scroll_replaces_articles():
         "https://x.com/user/status/3",
         "https://x.com/user/status/4",
     ]
+
+
+@pytest.mark.asyncio
+async def test_extract_skips_posts_after_until_date():
+    """until_date より新しい投稿は収集せず、それ以前の投稿だけを収集する"""
+    page = AsyncMock()
+    articles = [
+        make_article("/user/status/1", "2025-07-01T10:00:00Z"),  # until より新しい
+        make_article("/user/status/2", "2025-06-30T23:59:59Z"),  # until 以前
+        make_article("/user/status/3", "2025-06-01T10:00:00Z"),  # until 以前
+        make_article("/user/status/4", None),  # 日時不明は収集する
+    ]
+    page.query_selector_all = AsyncMock(side_effect=[articles] + [articles] * 3)
+    page.evaluate = AsyncMock()
+
+    until = datetime(2025, 6, 30, 23, 59, 59)
+    result = await extract_bookmark_urls(page, cutoff_date=None, until_date=until)
+
+    urls = [r["url"] for r in result]
+    assert urls == [
+        "https://x.com/user/status/2",
+        "https://x.com/user/status/3",
+        "https://x.com/user/status/4",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_extract_with_cutoff_and_until_date():
+    """cutoff_date と until_date を併用すると期間内の投稿を収集し、古い投稿の連続で停止する"""
+    page = AsyncMock()
+    articles = [
+        make_article("/user/status/1", "2025-08-01T10:00:00Z"),  # until より新しい
+        make_article("/user/status/2", "2025-05-01T10:00:00Z"),  # 期間内
+    ] + [
+        make_article(f"/user/status/old{i}", "2024-06-01T10:00:00Z")
+        for i in range(CUTOFF_CONSECUTIVE_THRESHOLD)
+    ]
+    page.query_selector_all = AsyncMock(return_value=articles)
+    page.evaluate = AsyncMock()
+
+    result = await extract_bookmark_urls(
+        page,
+        cutoff_date=datetime(2025, 1, 1),
+        until_date=datetime(2025, 6, 30, 23, 59, 59),
+    )
+
+    urls = [r["url"] for r in result]
+    assert "https://x.com/user/status/1" not in urls
+    assert "https://x.com/user/status/2" in urls
+    assert len(urls) == 1 + CUTOFF_CONSECUTIVE_THRESHOLD - 1

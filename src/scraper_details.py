@@ -6,7 +6,12 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.browser import connect_browser
 from src.config import load_config
-from src.sheets import get_pending_urls, get_sheets_client, get_worksheet, update_details
+from src.sheets import (
+    get_pending_urls,
+    get_sheets_client,
+    get_worksheet,
+    update_details,
+)
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
@@ -63,7 +68,9 @@ def build_image_formula(image_urls: list[str]) -> str:
 
 async def fetch_details(config: dict) -> None:
     client = get_sheets_client(config["credentials_path"])
-    worksheet = get_worksheet(client, config["spreadsheet_id"], config["worksheet_name"])
+    worksheet = get_worksheet(
+        client, config["spreadsheet_id"], config["worksheet_name"]
+    )
 
     pending = get_pending_urls(worksheet)
     if not pending:
@@ -84,7 +91,9 @@ async def fetch_details(config: dict) -> None:
                 details = await extract_post_details(page, url)
                 formula = build_image_formula(details["image_urls"])
                 update_details(worksheet, row, details["post_date"], formula)
-                print(f"  → 投稿日時: {details['post_date']}, 画像: {len(details['image_urls'])} 枚")
+                print(
+                    f"  → 投稿日時: {details['post_date']}, 画像: {len(details['image_urls'])} 枚"
+                )
             except Exception as e:
                 print(f"  → エラー: {e}")
 

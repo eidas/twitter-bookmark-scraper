@@ -4,13 +4,20 @@ from datetime import datetime
 
 from src.browser import connect_browser
 from src.config import load_config
-from src.sheets import append_bookmarks, get_existing_urls, get_sheets_client, get_worksheet
+from src.sheets import (
+    append_bookmarks,
+    get_existing_urls,
+    get_sheets_client,
+    get_worksheet,
+)
 
 
 CUTOFF_CONSECUTIVE_THRESHOLD = 5
 
 
-async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict]:
+async def extract_bookmark_urls(
+    page, cutoff_date: datetime | None, until_date: datetime | None = None
+) -> list[dict]:
     collected = []
     seen_urls = set()
     consecutive_old = 0
@@ -39,9 +46,16 @@ async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict
             time_el = await article.query_selector("time")
             if time_el:
                 datetime_str = await time_el.get_attribute("datetime") or ""
-                if cutoff_date and datetime_str:
-                    post_dt = datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
-                    if post_dt.replace(tzinfo=None) < cutoff_date:
+                post_dt = None
+                if datetime_str:
+                    post_dt = datetime.fromisoformat(
+                        datetime_str.replace("Z", "+00:00")
+                    ).replace(tzinfo=None)
+                # until_date より新しい投稿は収集対象外（スクロールは継続）
+                if until_date and post_dt and post_dt > until_date:
+                    continue
+                if cutoff_date and post_dt:
+                    if post_dt < cutoff_date:
                         consecutive_old += 1
                         if consecutive_old >= CUTOFF_CONSECUTIVE_THRESHOLD:
                             print(
@@ -71,11 +85,17 @@ async def extract_bookmark_urls(page, cutoff_date: datetime | None) -> list[dict
 
 async def collect_bookmarks(config: dict) -> None:
     client = get_sheets_client(config["credentials_path"])
-    worksheet = get_worksheet(client, config["spreadsheet_id"], config["worksheet_name"])
+    worksheet = get_worksheet(
+        client, config["spreadsheet_id"], config["worksheet_name"]
+    )
 
     cutoff_date = None
     if config.get("bookmark_cutoff_date"):
         cutoff_date = datetime.fromisoformat(config["bookmark_cutoff_date"])
+
+    until_date = None
+    if config.get("bookmark_until_date"):
+        until_date = datetime.fromisoformat(config["bookmark_until_date"])
 
     async with connect_browser(config["cdp_endpoint"]) as context:
         page = await context.new_page()
@@ -83,8 +103,10 @@ async def collect_bookmarks(config: dict) -> None:
         await page.wait_for_selector('article[data-testid="tweet"]', timeout=30000)
 
         print("ブックマークの収集を開始します...")
-        bookmarks = await extract_bookmark_urls(page, cutoff_date)
+        bookmarks = await extract_bookmark_urls(page, cutoff_date, until_date)
         print(f"収集完了: {len(bookmarks)} 件のブックマークを検出")
 
         added = append_bookmarks(worksheet, bookmarks)
-        print(f"Spreadsheet に {added} 件を追加しました（重複スキップ: {len(bookmarks) - added} 件）")
+        print(
+            f"Spreadsheet に {added} 件を追加しました（重複スキップ: {len(bookmarks) - added} 件）"
+        )

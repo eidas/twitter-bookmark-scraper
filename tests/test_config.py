@@ -27,7 +27,7 @@ def test_load_config_success(valid_config):
 
 def test_load_config_sets_defaults(valid_config):
     config = load_config(str(valid_config))
-    assert config["cdp_endpoint"] == "http://localhost:9222"
+    assert config["cdp_endpoint"] == "chrome"
 
 
 def test_load_config_preserves_custom_cdp(tmp_path):

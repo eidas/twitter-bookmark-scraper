@@ -1,5 +1,6 @@
 # X.com ブックマーク収集の設定
 bookmark_cutoff_date: "2025-01-01T00:00:00"  # この日時以降のブックマークを収集
+bookmark_until_date: "2026-01-01T00:00:00"  # この日時以前のブックマークだけを収集（空なら上限なし）
 
 # Google Spreadsheet
 spreadsheet_id: "YOUR_SPREADSHEET_ID_HERE"
@@ -7,4 +8,6 @@ worksheet_name: "bookmarks"
 credentials_path: "./credentials.json"
 
 # Playwright
-cdp_endpoint: "http://localhost:9222"
+# "chrome": chrome://inspect/#remote-debugging で有効化した普段使いの Chrome に接続
+# "http://localhost:9222": --remote-debugging-port=9222 付きで起動した Chrome に接続
+cdp_endpoint: "chrome"

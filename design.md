@@ -37,10 +37,20 @@ X.com のブックマークから投稿情報を抽出し、Google Spreadsheet �
 
 ### 採用方式：CDP (Chrome DevTools Protocol) 接続
 
-ユーザーが普段使っている Chrome をデバッグポート付きで起動し、Playwright からそこに接続する。
+ユーザーが普段使っている Chrome のリモートデバッグを有効化し、Playwright からそこに接続する。
 これにより **ログインセッション（Cookie）がそのまま利用** でき、再認証が不要になる。
 
-#### Chrome 起動コマンド（ユーザーが手動で実行）
+#### リモートデバッグの有効化（ユーザーが手動で実行）
+
+1. Chrome で `chrome://inspect/#remote-debugging` を開き、リモートデバッグを有効化する
+2. 接続時に Chrome に表示される確認ダイアログで「許可」を選択する
+
+この方式では HTTP の `/json/version` エンドポイントが提供されないため、
+Chrome がユーザーデータフォルダに書き出す `DevToolsActivePort` ファイル
+（1行目: ポート番号、2行目: `/devtools/browser/<id>`）から WebSocket URL を組み立てて接続する。
+`config.yaml` の `cdp_endpoint: "chrome"` がこの方式に対応する。
+
+#### 代替: デバッグポート付きで起動（`cdp_endpoint: "http://localhost:9222"`）
 
 ```bash
 # macOS
@@ -48,27 +58,28 @@ X.com のブックマークから投稿情報を抽出し、Google Spreadsheet �
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/chrome-debug-profile"
 
-# Windows
-"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
-  --remote-debugging-port=9222 ^
-  --user-data-dir="%USERPROFILE%\chrome-debug-profile"
+# Windows (PowerShell)
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+  --remote-debugging-port=9222 `
+  --user-data-dir="$env:USERPROFILE\chrome-debug-profile"
 
 # Linux
 google-chrome --remote-debugging-port=9222 \
   --user-data-dir="$HOME/chrome-debug-profile"
 ```
 
-> **初回のみ**：起動した Chrome で X.com にログインしておく。
-> 以降は `chrome-debug-profile` にセッションが保存される。
+> 専用プロフィールとなるため、初回のみ起動した Chrome で X.com にログインしておく。
 
 #### Playwright 接続コード
 
 ```python
 from playwright.async_api import async_playwright
 
-async def connect_browser():
+async def connect_browser(cdp_endpoint: str = "chrome"):
+    # "chrome" の場合は DevToolsActivePort から ws://127.0.0.1:<port>/devtools/browser/<id> を組み立てる
+    endpoint = resolve_cdp_endpoint(cdp_endpoint)
     pw = await async_playwright().start()
-    browser = await pw.chromium.connect_over_cdp("http://localhost:9222")
+    browser = await pw.chromium.connect_over_cdp(endpoint)
     context = browser.contexts[0]  # 既存のブラウザコンテキストを取得
     return pw, browser, context
 ```
@@ -82,7 +93,8 @@ x-bookmark-scraper/
 ├── config.sample.yaml       # 設定ファイルのサンプル（Git 管理対象）
 ├── config.yaml              # 設定ファイル（config.sample.yaml をコピーして作成、Git 管理対象外）
 ├── credentials.json          # Google API サービスアカウント鍵
-├── requirements.txt
+├── pyproject.toml           # 依存パッケージ定義（uv で管理）
+├── uv.lock                  # 依存パッケージのロックファイル
 ├── src/
 │   ├── __init__.py
 │   ├── config.py             # 設定読み込み
@@ -102,6 +114,7 @@ x-bookmark-scraper/
 ```yaml
 # X.com ブックマーク収集の設定
 bookmark_cutoff_date: "2025-01-01T00:00:00"  # この日時以降のブックマークを収集
+bookmark_until_date: "2025-06-30T23:59:59"  # この日時以前のブックマークだけを収集（省略・空なら上限なし）
 
 # Google Spreadsheet
 spreadsheet_id: "1aBcDeFgHiJkLmNoPqRsTuVwXyZ..."
@@ -109,7 +122,7 @@ worksheet_name: "bookmarks"
 credentials_path: "./credentials.json"
 
 # Playwright
-cdp_endpoint: "http://localhost:9222"
+cdp_endpoint: "chrome"  # または "http://localhost:9222"
 ```
 
 ---
@@ -123,7 +136,7 @@ cdp_endpoint: "http://localhost:9222"
 2. https://x.com/i/bookmarks を開く
 3. 無限スクロールしながらポストを検出
 4. 各ポストから URL (https://x.com/{user}/status/{id}) を抽出
-5. ポストの表示日時を簡易取得し、cutoff_date より古ければ停止
+5. ポストの表示日時を簡易取得し、until_date より新しければ読み飛ばし、cutoff_date より古い投稿が連続したら停止
 6. 収集した URL を Spreadsheet に書き込み
 ```
 
@@ -172,7 +185,7 @@ async def extract_bookmark_urls(page, cutoff_date):
 
 ### Spreadsheet 書き込みフォーマット（Phase 1 完了時）
 
-| A: URL | B: 取得日時 | C: ステータス |
+| A: URL | B: 投稿日時（一覧から取得） | C: ステータス |
 |--------|-----------|-------------|
 | `https://x.com/user/status/123` | `2025-06-15T10:30:00` | `pending` |
 
@@ -262,9 +275,9 @@ def build_image_formula(image_urls: list[str]) -> str:
 
 ### Spreadsheet 更新後フォーマット（Phase 3 完了時）
 
-| A: URL | B: 取得日時 | C: ステータス | D: 投稿日時 | E: サムネイル |
+| A: URL | B: 投稿日時（一覧から取得） | C: ステータス | D: サムネイル | E: 投稿日時 |
 |--------|-----------|-------------|-----------|-------------|
-| `https://x.com/user/status/123` | `2025-06-15T10:30:00` | `keep` | `2025-06-14T08:00:00` | `=IMAGE(...)` |
+| `https://x.com/user/status/123` | `2025-06-15T10:30:00` | `keep` | `=IMAGE(...)` | `2025-06-14T08:00:00` |
 
 ---
 
@@ -304,13 +317,13 @@ def get_worksheet(client, spreadsheet_id, worksheet_name):
 
 ```bash
 # Phase 1: ブックマーク収集
-python -m src.main collect-bookmarks
+uv run python -m src.main collect-bookmarks
 
 # Phase 3: 詳細情報取得
-python -m src.main fetch-details
+uv run python -m src.main fetch-details
 
 # ヘルプ
-python -m src.main --help
+uv run python -m src.main --help
 ```
 
 `main.py` では `argparse` または `click` でサブコマンドを実装する。
@@ -351,21 +364,28 @@ async def rate_limited_wait():
 Spreadsheet 自体が進捗の永続化を兼ねる。
 
 - Phase 1：既に Spreadsheet にある URL はスキップ（重複チェック）
-- Phase 3：D列（投稿日時）が空の行だけを処理対象とする
+- Phase 3：E列（投稿日時）が空の行だけを処理対象とする
 
 これにより、途中でスクリプトが落ちても再実行で続きから処理できる。
 
 ---
 
-## 13. 依存パッケージ (requirements.txt)
+## 13. 依存パッケージ (pyproject.toml)
 
-```
-playwright>=1.40
-gspread>=6.0
-google-auth>=2.0
-pyyaml>=6.0
-tenacity>=8.0
-click>=8.0
+uv で管理する。追加は `uv add <パッケージ名>`、環境の再現は `uv sync` で行う。
+
+```toml
+dependencies = [
+    "click>=8.0",
+    "google-auth>=2.0",
+    "gspread>=6.0",
+    "playwright>=1.40",
+    "pyyaml>=6.0",
+    "tenacity>=8.0",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "ruff"]
 ```
 
 ---
@@ -374,7 +394,7 @@ click>=8.0
 
 - `credentials.json` は `.gitignore` に追加し、リポジトリにコミットしない
 - `chrome-debug-profile` ディレクトリにはセッション情報が含まれるため取扱い注意
-- CDP ポート (9222) はローカルのみでリッスンされるが、他アプリからもアクセス可能なため、使用後は Chrome を終了するか、ポートを閉じる
+- リモートデバッグはローカルのみでリッスンされるが、他アプリからもアクセス可能なため、使用後は `chrome://inspect/#remote-debugging` で無効化するか、デバッグ用 Chrome を終了する
 - X.com の利用規約上、スクレイピングは制限される可能性がある。個人利用・自身のブックマークに限定すること
 
 ---

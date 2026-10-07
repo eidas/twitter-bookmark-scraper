@@ -34,7 +34,10 @@ class TestBuildImageFormula:
     def test_single_image(self):
         urls = ["https://pbs.twimg.com/media/AbCdEf.jpg"]
         result = build_image_formula(urls)
-        assert result == '=IMAGE("https://pbs.twimg.com/media/AbCdEf?format=jpg&name=small")'
+        assert (
+            result
+            == '=IMAGE("https://pbs.twimg.com/media/AbCdEf?format=jpg&name=small")'
+        )
 
     def test_multiple_images_uses_first(self):
         urls = [

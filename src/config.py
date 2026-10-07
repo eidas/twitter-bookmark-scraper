@@ -4,7 +4,7 @@ from pathlib import Path
 REQUIRED_KEYS = ["spreadsheet_id", "worksheet_name", "credentials_path"]
 
 DEFAULTS = {
-    "cdp_endpoint": "http://localhost:9222",
+    "cdp_endpoint": "chrome",
 }
 
 

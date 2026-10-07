@@ -14,7 +14,9 @@ def cli():
 
 
 @cli.command("collect-bookmarks")
-@click.option("--config", "config_path", default="./config.yaml", help="設定ファイルのパス")
+@click.option(
+    "--config", "config_path", default="./config.yaml", help="設定ファイルのパス"
+)
 def collect_bookmarks_cmd(config_path: str):
     """Phase 1: ブックマークページから URL を収集して Spreadsheet に書き込む"""
     config = load_config(config_path)
@@ -22,7 +24,9 @@ def collect_bookmarks_cmd(config_path: str):
 
 
 @cli.command("fetch-details")
-@click.option("--config", "config_path", default="./config.yaml", help="設定ファイルのパス")
+@click.option(
+    "--config", "config_path", default="./config.yaml", help="設定ファイルのパス"
+)
 def fetch_details_cmd(config_path: str):
     """Phase 3: 各ポストの投稿日時と画像を取得して Spreadsheet を更新する"""
     config = load_config(config_path)
