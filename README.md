@@ -35,7 +35,16 @@ uv run playwright install chromium
 
 ### 3. 設定ファイルの編集
 
-`config.yaml` を環境に合わせて編集する。
+サンプルをコピーして `config.yaml` を作成し、環境に合わせて編集する。
+`config.yaml` は `.gitignore` 対象のため Git にはコミットされない。
+
+```bash
+# macOS / Linux
+cp config.sample.yaml config.yaml
+
+# Windows (PowerShell)
+Copy-Item config.sample.yaml config.yaml
+```
 
 ```yaml
 bookmark_cutoff_date: "2025-01-01T00:00:00"  # この日時以降のブックマークを収集

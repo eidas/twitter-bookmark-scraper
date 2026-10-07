@@ -60,3 +60,5 @@ def update_details(
     worksheet.update_cell(row_number, 4, post_date)  # D列
     if image_formula:
         worksheet.update_cell(row_number, 5, image_formula)  # E列
+
+

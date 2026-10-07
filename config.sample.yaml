@@ -1,0 +1,10 @@
+# X.com ブックマーク収集の設定
+bookmark_cutoff_date: "2025-01-01T00:00:00"  # この日時以降のブックマークを収集
+
+# Google Spreadsheet
+spreadsheet_id: "YOUR_SPREADSHEET_ID_HERE"
+worksheet_name: "bookmarks"
+credentials_path: "./credentials.json"
+
+# Playwright
+cdp_endpoint: "http://localhost:9222"

@@ -79,7 +79,8 @@ async def connect_browser():
 
 ```
 x-bookmark-scraper/
-├── config.yaml              # 設定ファイル
+├── config.sample.yaml       # 設定ファイルのサンプル（Git 管理対象）
+├── config.yaml              # 設定ファイル（config.sample.yaml をコピーして作成、Git 管理対象外）
 ├── credentials.json          # Google API サービスアカウント鍵
 ├── requirements.txt
 ├── src/
@@ -95,6 +96,8 @@ x-bookmark-scraper/
 ---
 
 ## 6. 設定ファイル (config.yaml)
+
+リポジトリには `config.sample.yaml` のみを含め、実際の `config.yaml` はこれをコピーして作成する（`.gitignore` で Git 管理対象外）。
 
 ```yaml
 # X.com ブックマーク収集の設定

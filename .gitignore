@@ -1,6 +1,9 @@
 # Credentials
 credentials.json
 
+# Local config (copy from config.sample.yaml)
+config.yaml
+
 # Chrome debug profile
 chrome-debug-profile/
 
